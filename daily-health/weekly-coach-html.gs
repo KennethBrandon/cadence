@@ -67,11 +67,17 @@ function markdownToHtml(markdown, weekLabel, inlineImages) {
 
     // 3. Lists (Handles * or - with ANY number of spaces)
     .replace(/^[\*\-]\s+(.+)$/gm, '<li style="margin-bottom: 6px;">$1</li>')
-    .replace(/^(\d+)\.\s+(.+)$/gm, '<li style="margin-bottom: 6px;">$2</li>');
+    .replace(/^(\d+)\.\s+(.+)$/gm, '<li style="margin-bottom: 6px;">$2</li>')
+
+    // 4. Italics
+    .replace(/\*(.*?)\*/g, '<em>$1</em>');
 
   // Wrap consecutive <li> elements in a proper <ul> block
-  html = html.replace(/(<li[^>]*>.*?<\/li>\s*)+/g, match => {
-    return `<ul style="margin: 8px 0 16px 0; padding-left: 20px;">${match}</ul>`;
+  // Extracts only the <li> tags and drops interstitial whitespace (like \n\n)
+  // to prevent it from being parsed into broken </div><div> blocks later.
+  html = html.replace(/(?:<li[^>]*>.*?<\/li>\s*)+/g, match => {
+    const lis = match.match(/<li[^>]*>.*?<\/li>/g).join('');
+    return `<ul style="margin: 8px 0 16px 0; padding-left: 20px;">\n${lis}\n</ul>\n\n`;
   });
 
   // 4. Handle spacing
