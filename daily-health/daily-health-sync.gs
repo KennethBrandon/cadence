@@ -210,11 +210,18 @@ function syncHealthForDate(dateStr, includeSleep, headers) {
   if (calsRollup?.totalCalories?.kcalSum) totalCals = Math.round(calsRollup.totalCalories.kcalSum);
 
   // 7. Respiratory Rate (daily)
+  // The API has been observed returning adjacent-date points despite the date
+  // filter (same pattern as RHR/HRV above), so match on day before reading.
+  // Without this, querying for today when the API hasn't computed today's value
+  // yet returns yesterday's point, and dataPoints[0] silently writes the wrong
+  // day's value into today's row.
   let respRate = "";
   const respData = fetchHealthAPI("daily-respiratory-rate",
     `daily_respiratory_rate.date>="${dateStr}" AND daily_respiratory_rate.date<"${nextDayStr}"`);
-  if (respData?.dataPoints?.[0]?.dailyRespiratoryRate?.breathsPerMinute != null) {
-    respRate = respData.dataPoints[0].dailyRespiratoryRate.breathsPerMinute;
+  const respPoint = respData?.dataPoints?.find(p =>
+    p.dailyRespiratoryRate?.date?.day === date.getUTCDate());
+  if (respPoint?.dailyRespiratoryRate?.breathsPerMinute != null) {
+    respRate = respPoint.dailyRespiratoryRate.breathsPerMinute;
   }
 
   // 8. Skin Temp Δ + Sleep Tracked? (Y/N if endpoint succeeds, blank if it fails)
@@ -269,18 +276,39 @@ function syncHealthForDate(dateStr, includeSleep, headers) {
     bodyFat = bodyFatData.dataPoints[0].bodyFat.percentage;
   }
 
-  // 13. Upsert to sheet (23 columns). For cols 17–23, preserve existing values
-  // when a fetch returned empty so intermittent API failures don't wipe data.
-  const rowNum = getOrCreateRowForDate(sheet, dateStr);
-  const existingNew = sheet.getRange(rowNum, 17, 1, 7).getValues()[0];
-  const newCols = [respRate, tempDelta, vo2Daily, vo2Run, azm, bodyFat, sleepTracked]
-    .map((v, i) => v !== "" ? v : existingNew[i]);
-  sheet.getRange(rowNum, 1, 1, 23).setValues([[
-    dateStr, weightLbs, rhr, avgHrv, nonRemHr, entropy, deepSleepRmssd,
-    totalSleep, lightM, deepM, remM, awakeM,
-    totalSteps || "", spo2 || "", totalDistMi || "", totalCals || "",
-    ...newCols
-  ]]);
+  // 13. Upsert to sheet. Layout:
+  //   cols 1–16  : core daily metrics (always overwritten — `|| ""` handles gaps)
+  //   col  17    : Readiness (computed by readiness-score.gs — DO NOT touch)
+  //   cols 18–23 : Skin Temp Δ, VO2 Max, VO2 Max (measured), AZM, Body Fat, Sleep Tracked
+  //   col  24    : Resp Rate
+  // For cols 18–24 we preserve the existing cell when a fetch returned empty,
+  // so intermittent API failures don't wipe data.
+  //
+  // Held under a script lock so the multi-range write can't interleave with
+  // computeReadinessScores' bulk write to col 17 (or with another sync run).
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    console.warn(`Skipping upsert for ${dateStr}: could not acquire script lock.`);
+    return;
+  }
+  try {
+    const rowNum = getOrCreateRowForDate(sheet, dateStr);
+    sheet.getRange(rowNum, 1, 1, 16).setValues([[
+      dateStr, weightLbs, rhr, avgHrv, nonRemHr, entropy, deepSleepRmssd,
+      totalSleep, lightM, deepM, remM, awakeM,
+      totalSteps || "", spo2 || "", totalDistMi || "", totalCals || ""
+    ]]);
+
+    const existingNew = sheet.getRange(rowNum, 18, 1, 6).getValues()[0];
+    const newCols = [tempDelta, vo2Daily, vo2Run, azm, bodyFat, sleepTracked]
+      .map((v, i) => v !== "" ? v : existingNew[i]);
+    sheet.getRange(rowNum, 18, 1, 6).setValues([newCols]);
+
+    const existingResp = sheet.getRange(rowNum, 24).getValue();
+    sheet.getRange(rowNum, 24).setValue(respRate !== "" ? respRate : existingResp);
+  } finally {
+    lock.releaseLock();
+  }
 
   console.log(`Synced ${dateStr} — Steps: ${totalSteps}, Cals: ${totalCals}, Sleep: ${totalSleep ? totalSleep + ' min' : 'none found'}, Resp: ${respRate}, AZM: ${azm}`);
 }
@@ -502,13 +530,17 @@ function runYearlyBackfill() {
 
 
 // =============================================================================
-// BACKFILL: 6 new columns (Resp Rate, Skin Temp Δ, VO2 Max, VO2 Max (measured),
-// Active Zone Min, Body Fat %) across every existing dated row. Adds headers
-// if missing. Idempotent — only fills cells that are currently empty.
+// BACKFILL: new columns across every existing dated row. Layout:
+//   col 17    : Readiness (computed by readiness-score.gs — left alone here)
+//   cols 18–23: Skin Temp Δ, VO2 Max, VO2 Max (measured), AZM, Body Fat, Sleep Tracked
+//   col 24    : Resp Rate
+// Adds headers if missing. Idempotent — only fills cells that are currently empty.
 // =============================================================================
 function backfillNewColumns() {
-  const NEW_HEADERS = ['Resp Rate', 'Skin Temp Δ (°C)', 'VO2 Max', 'VO2 Max (measured)', 'Active Zone Min', 'Body Fat %', 'Sleep Tracked?'];
-  const FIRST_NEW_COL = 17; // existing sheet has 16 columns
+  const NEW_HEADERS = ['Skin Temp Δ (°C)', 'VO2 Max', 'VO2 Max (measured)', 'Active Zone Min', 'Body Fat %', 'Sleep Tracked?'];
+  const FIRST_NEW_COL = 18; // col 17 is Readiness, owned by readiness-score.gs
+  const RESP_COL = 24;
+  const RESP_HEADER = 'Resp Rate';
 
   const healthService = getHealthService();
   if (!healthService.hasAccess()) { console.error('Not authorized.'); return; }
@@ -520,16 +552,18 @@ function backfillNewColumns() {
   const refreshHeaders = () => { headers = { 'Authorization': 'Bearer ' + healthService.getAccessToken(), 'Content-Type': 'application/json' }; };
   const tz = Session.getScriptTimeZone();
 
-  // 1. ensure new headers
-  const headerRow = sheet.getRange(1, 1, 1, FIRST_NEW_COL + NEW_HEADERS.length - 1).getValues()[0];
+  // 1. ensure new headers (cols 18–23 and 24). Header writes happen BEFORE the
+  // data read so getDataRange expands to include col 24 even on a 23-col sheet.
+  const headerRow = sheet.getRange(1, 1, 1, RESP_COL).getValues()[0];
   NEW_HEADERS.forEach((h, i) => {
     if (headerRow[FIRST_NEW_COL - 1 + i] !== h) sheet.getRange(1, FIRST_NEW_COL + i).setValue(h);
   });
+  if (headerRow[RESP_COL - 1] !== RESP_HEADER) sheet.getRange(1, RESP_COL).setValue(RESP_HEADER);
 
   // 2. index existing rows by date + find date range.
   // For chunk-skip logic, track which dense columns each date already has filled.
   // (Cols 20=run-vo2 and 22=body-fat are inherently sparse and don't gate.)
-  const DENSE_COLS = [17, 18, 19, 21]; // Resp Rate, Skin Temp Δ, VO2 Max, AZM
+  const DENSE_COLS = [18, 19, 21, 24]; // Skin Temp Δ, VO2 Max, AZM, Resp Rate
   const data = sheet.getDataRange().getValues();
   const rowByDate = new Map();
   const denseFilled = new Map(); // dateStr -> Set<colNum>
@@ -704,18 +738,27 @@ function backfillNewColumns() {
     records.forEach((r, ds) => {
       const rowNum = rowByDate.get(ds);
       if (!rowNum) return;
+
+      // cols 18–23 (the 6 NEW_HEADERS)
       const range = sheet.getRange(rowNum, FIRST_NEW_COL, 1, NEW_HEADERS.length);
       const existing = range.getValues()[0];
       const next = [
-        existing[0] === '' && r.resp         != null ? r.resp         : existing[0],
-        existing[1] === '' && r.tempDelta    != null ? r.tempDelta    : existing[1],
-        existing[2] === '' && r.vo2Daily     != null ? r.vo2Daily     : existing[2],
-        existing[3] === '' && r.vo2Run       != null ? r.vo2Run       : existing[3],
-        existing[4] === '' && r.azm          != null ? r.azm          : existing[4],
-        existing[5] === '' && r.bodyFat      != null ? r.bodyFat      : existing[5],
-        existing[6] === '' && r.sleepTracked != null ? r.sleepTracked : existing[6],
+        existing[0] === '' && r.tempDelta    != null ? r.tempDelta    : existing[0],
+        existing[1] === '' && r.vo2Daily     != null ? r.vo2Daily     : existing[1],
+        existing[2] === '' && r.vo2Run       != null ? r.vo2Run       : existing[2],
+        existing[3] === '' && r.azm          != null ? r.azm          : existing[3],
+        existing[4] === '' && r.bodyFat      != null ? r.bodyFat      : existing[4],
+        existing[5] === '' && r.sleepTracked != null ? r.sleepTracked : existing[5],
       ];
-      if (next.some((v, i) => v !== existing[i])) { range.setValues([next]); writes++; }
+      let wrote = false;
+      if (next.some((v, i) => v !== existing[i])) { range.setValues([next]); wrote = true; }
+
+      // col 24 (Resp Rate)
+      const respCell = sheet.getRange(rowNum, RESP_COL);
+      const existingResp = respCell.getValue();
+      if (existingResp === '' && r.resp != null) { respCell.setValue(r.resp); wrote = true; }
+
+      if (wrote) writes++;
     });
     console.log(`  wrote ${writes} rows`);
 

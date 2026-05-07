@@ -3,7 +3,7 @@ function mergeAndDeduplicateWorkouts() {
 
   // 1. Get the Source Sheets
   const stravaSheet = ss.getSheetByName("Strava Workouts");
-  const fitbitSheet = ss.getSheetByName("FitBit Workouts");
+  const fitbitSheet = ss.getSheetByName("FitBit Activities");
 
   if (!stravaSheet || !fitbitSheet) {
     console.error("Missing one of the source sheets. Please check the names.");
