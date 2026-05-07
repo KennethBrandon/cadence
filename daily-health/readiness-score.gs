@@ -22,6 +22,21 @@ const BASELINE_WINDOW   = 14;   // days for rolling average
 // MAIN — call manually or add to runDailyHealthSync()
 // =============================================================================
 function computeReadinessScores() {
+  // Serialized against runDailyHealthSync's upsert. Both writers must hold
+  // the same script lock or the lock on the other side is useless.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    console.warn('Skipping readiness compute: could not acquire script lock.');
+    return;
+  }
+  try {
+    _computeReadinessScoresLocked();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _computeReadinessScoresLocked() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Daily Data');
   if (!sheet || sheet.getLastRow() < 2) {
