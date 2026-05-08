@@ -89,3 +89,7 @@ grant OAuth scopes for the Google Health API.
 Both projects rely on time-based triggers installed via one-time setup
 functions inside the script (e.g. `INSTALL_HEALTH_TRIGGER`). Run those once
 from the Apps Script editor; verify in **Triggers** in the left sidebar.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
