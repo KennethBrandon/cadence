@@ -7,6 +7,9 @@ node_modules/
 # clasp credentials (these live in ~/.clasprc.json by default; defensive entry)
 .clasprc.json
 
+# clasp project pointers — contain the user's own scriptId, recreated locally
+.clasp.json
+
 # Editor / local config
 .vscode/
 .idea/
