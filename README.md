@@ -312,6 +312,13 @@ Quick lookup for everything covered in the setup steps above.
 | `REPORT_EMAIL` | D | Where the weekly coach report is sent |
 | `ATHLETE_PROFILE` | D | JSON profile (see Step 4) |
 
+## Support
+
+This is a personal project, not a product. Fork freely, but I'm not running
+a support desk. If you hit a wall, paste this README plus whatever error
+you're seeing into Claude, Gemini, or ChatGPT — they'll almost certainly get
+you unstuck faster than I could reply anyway.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
