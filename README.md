@@ -43,6 +43,24 @@ npx --yes @google/clasp@latest login
 You'll also need the **Google Apps Script API** enabled at
 <https://script.google.com/home/usersettings>.
 
+### Wire each project to your own Apps Script
+
+`.clasp.json` is gitignored — it points clasp at *your* Apps Script project,
+so it's recreated per-machine. In each project folder, create a `.clasp.json`
+like:
+
+```json
+{
+  "scriptId": "<your script id>",
+  "rootDir": "."
+}
+```
+
+The script ID is the long string in the project's URL at
+<https://script.google.com> (`script.google.com/d/<scriptId>/edit`). Or, if
+you're starting from a fresh Apps Script project, run
+`npx --yes @google/clasp@latest clone <scriptId>` from the project folder.
+
 ## Pushing local changes to Apps Script
 
 ```bash
