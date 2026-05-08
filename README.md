@@ -32,6 +32,30 @@ cadence/
 
 Each project subfolder is a separate `clasp` root.
 
+## What it produces
+
+A weekly email summarizing what you did and how your body responded, plus
+the underlying sheets you can slice yourself.
+
+**The weekly AI coach email** — Gemini-written headline, daily workout list,
+and recovery analysis. (Tier D)
+
+![Weekly coach — training section](docs/screenshots/weekly-coach-training.png)
+
+![Weekly coach — recovery section](docs/screenshots/weekly-coach-recovery.png)
+
+**The Training Load sheet** — daily TSS, fitness (CTL), fatigue (ATL), and
+form (TSB), with conditional formatting and a chart. Updates every night
+from Strava. (Tier A)
+
+![Training Load sheet](docs/screenshots/training-load-sheet.png)
+
+**The Daily Data sheet** — every metric the Google Health API exposes, one
+row per day. Resting HR, HRV, sleep stages, SpO2, steps, distance, calories,
+readiness, skin temp, VO2 max, and more. (Tier B)
+
+![Daily Data sheet](docs/screenshots/daily-data-sheet.png)
+
 ## Getting started
 
 Pick a tier — each builds on the previous, all credentials stay isolated to
