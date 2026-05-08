@@ -7,6 +7,10 @@ metrics on top, and send a weekly AI coaching report.
 The pieces are designed to be adopted **independently or together** — fork
 just the Strava sync if that's all you want, or stack the whole thing.
 
+> **Not medical advice.** The metrics, readiness scores, and AI-generated
+> coaching here are for personal experimentation only. Don't make health or
+> training decisions based on them — talk to a qualified provider.
+
 ## Layout
 
 ```
