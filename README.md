@@ -11,6 +11,16 @@ just the Strava sync if that's all you want, or stack the whole thing.
 > coaching here are for personal experimentation only. Don't make health or
 > training decisions based on them — talk to a qualified provider.
 
+## Why I built this
+
+I wanted my Fitbit and Strava data in a place I control — not locked inside
+vendor apps and not gated behind premium subscriptions for the "insights"
+features. Once it's in a Google Sheet, I can chart it however I want
+(Sheets, Data Studio, anywhere) and feed it to AI on demand. The data
+auto-updates, so a Gemini gem or a Claude project pointed at the spreadsheet
+can answer "how's my training looking this week?" without me copy-pasting
+anything.
+
 ## Layout
 
 ```
