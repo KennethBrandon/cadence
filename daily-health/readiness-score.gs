@@ -31,6 +31,9 @@ function computeReadinessScores() {
   }
   try {
     _computeReadinessScoresLocked();
+    // Sickness signal reads the same sheet and writes col 25; chained here so
+    // it rides the existing trigger and lock (sickness-score.gs).
+    _computeSicknessScoresLocked();
   } finally {
     lock.releaseLock();
   }

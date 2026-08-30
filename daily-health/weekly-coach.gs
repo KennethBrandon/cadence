@@ -271,6 +271,23 @@ function sendWeeklyCoachReport(options) {
       }).join(', ') + '\n';
     }
 
+    // Sickness signal (col 25 = index 24, computed by sickness-score.gs).
+    // Peak matters more than average — illness is an episode, not a trend.
+    const sickVals = rows.map(r => parseFloat(r[24])).filter(v => !isNaN(v));
+    if (sickVals.length > 0) {
+      const sickPeak = Math.max(...sickVals);
+      summary += `  Sickness Signal peak: ${sickPeak.toFixed(0)}/100`;
+      if (sickPeak >= 35) {
+        summary += ` — daily: ` + rows.map(r => {
+          const dateStr = r[0] instanceof Date
+            ? Utilities.formatDate(r[0], tz, 'EEE')
+            : String(r[0]).substring(0, 10);
+          return `${dateStr}: ${r[24] !== '' && r[24] !== null ? r[24] : '—'}`;
+        }).join(', ');
+      }
+      summary += '\n';
+    }
+
     return summary;
   }
 
@@ -512,6 +529,23 @@ ${lines.join('\n')}`;
   - ${patternNotes.join('\n  - ')}\n`
     : '';
 
+  // Sickness-signal context for the prompt: only injected when this week
+  // actually crossed the watch threshold, so quiet weeks cost zero tokens.
+  const sickWeek = thisWeekHealth
+    .map(r => ({
+      day: r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'EEE') : String(r[0]).substring(0, 10),
+      v: parseFloat(r[24])
+    }))
+    .filter(d => !isNaN(d.v));
+  const sickPeakWeek = sickWeek.length ? Math.max(...sickWeek.map(d => d.v)) : 0;
+  const sicknessBlock = sickPeakWeek >= 35
+    ? `\nSICKNESS SIGNAL — a daily 0-100 illness probability computed from overnight RHR, HRV, skin temp, respiratory rate, and SpO2 against the athlete's own 14-day baselines, with hard-workout days discounted. This week: ${sickWeek.map(d => `${d.day}: ${d.v.toFixed(0)}`).join(', ')} (peak ${sickPeakWeek.toFixed(0)}).
+Interpretation rules:
+  - Any day ≥ 50 ("likely"): attribute that day's readiness drop primarily to the body fighting something systemic, NOT to training stress or sleep. Lead the Recovery section with it and recommend backing off training until the signal clears. Phrase it as "pattern consistent with fighting something" — never as a diagnosis.
+  - Peak 35-49 ("watch"): one brief mention as a watch item; innocent explanations (hot room, alcohol, a big previous day) are equally likely. Don't dramatize.
+  - Never present this as medical advice or a diagnosis.\n`
+    : '';
+
   const interestingAngle = detectInterestingAngle({
     thisWeekHealth,
     thirtyDayHealth,
@@ -536,7 +570,7 @@ PREFERRED TONE: Observational and collaborative. "The data shows..." / "One thin
 LENS FOR THIS WEEK: ${lensForWeek.name}
 ${lensForWeek.direction}
 Do not mention the lens name in the report. Just write in that voice. The lens rotates weekly — the athlete sees the variety; they shouldn't see the label.
-${celebrationBlock}${patternNotesBlock}
+${celebrationBlock}${patternNotesBlock}${sicknessBlock}
 
 ATHLETE CONTEXT — use this to tailor every section. Reference age/sex-appropriate norms when relevant, respect injury history (never recommend loading patterns that aggravate known issues), and tie training and recovery back to the athlete's stated goals when it adds something. Don't restate the profile back to them.
 ${athleteContext}
