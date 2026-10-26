@@ -682,15 +682,28 @@ ${prevWeekWorkouts}`;
     }
   };
 
-  const response = UrlFetchApp.fetch(geminiUrl, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
+  let response;
+  try {
+    response = UrlFetchApp.fetch(geminiUrl, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    console.error("Gemini API request failed: " + e.message);
+    if (!skipEmail) sendCoachFailureEmail('The Gemini API request threw an exception.', e.message);
+    return;
+  }
 
   if (response.getResponseCode() !== 200) {
     console.error("Gemini API error: " + response.getContentText());
+    if (!skipEmail) {
+      sendCoachFailureEmail(
+        `The Gemini API returned HTTP ${response.getResponseCode()}.`,
+        response.getContentText().substring(0, 2000)
+      );
+    }
     return;
   }
 
@@ -706,6 +719,12 @@ ${prevWeekWorkouts}`;
 
   if (!reportText) {
     console.error("No report generated. Response: " + response.getContentText());
+    if (!skipEmail) {
+      sendCoachFailureEmail(
+        `Gemini returned no report text (finish reason: ${finishReason}).`,
+        response.getContentText().substring(0, 2000)
+      );
+    }
     return;
   }
 
@@ -914,5 +933,20 @@ ${prevWeekWorkouts}`;
     console.log(`Report saved to history (lens: ${lensForWeek ? lensForWeek.name : 'none'}, angle: ${interestingAngle ? interestingAngle.angle : 'none'}).`);
   } catch (e) {
     console.error(`Failed to save report to history: ${e.message}`);
+  }
+}
+
+// Email a short failure notice so a dead report never goes unnoticed.
+// Errors here are swallowed — a broken alert must not mask the original failure.
+function sendCoachFailureEmail(reason, details) {
+  try {
+    MailApp.sendEmail(
+      REPORT_EMAIL,
+      'Weekly Health Report FAILED',
+      `The Weekly Coach Report was not generated.\n\n${reason}\n\n${details}\n\nSee the execution log in the Apps Script editor for full details.`
+    );
+    console.log("Failure notification email sent.");
+  } catch (e) {
+    console.error(`Failed to send failure notification: ${e.message}`);
   }
 }
